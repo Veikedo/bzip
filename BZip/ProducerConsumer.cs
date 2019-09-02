@@ -4,17 +4,33 @@ using System.Threading;
 
 namespace BZip
 {
-  public class ProducerConsumer<T>
+  internal class ProducerConsumer<T>
   {
+    private const int UnboundedCapacity = -1;
+    private readonly int _boundedCapacity;
     private readonly Queue<T> _queue = new Queue<T>();
     private readonly object _sync = new object();
     private bool _isDead;
 
-    public bool TryAdd(T task)
+    public ProducerConsumer(int boundedCapacity)
     {
-      if (task == null)
+      if (boundedCapacity <= 0 && boundedCapacity != UnboundedCapacity)
       {
-        throw new ArgumentNullException(nameof(task));
+        throw new ArgumentOutOfRangeException(nameof(boundedCapacity));
+      }
+
+      _boundedCapacity = boundedCapacity;
+    }
+
+    public ProducerConsumer() : this(UnboundedCapacity)
+    {
+    }
+
+    public bool TryAdd(T value)
+    {
+      if (value == null)
+      {
+        throw new ArgumentNullException(nameof(value));
       }
 
       lock (_sync)
@@ -24,7 +40,7 @@ namespace BZip
           return false;
         }
 
-        _queue.Enqueue(task);
+        _queue.Enqueue(value);
         Monitor.Pulse(_sync);
 
         return true;
@@ -52,7 +68,7 @@ namespace BZip
       }
     }
 
-    public void Stop()
+    public void CompleteAdding()
     {
       lock (_sync)
       {
