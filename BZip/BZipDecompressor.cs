@@ -8,86 +8,96 @@ using System.Threading;
 
 namespace BZip
 {
-  public class BZipCompressor
+  public class BZipDecompressor
   {
     private const int ChunkSize = 1 * 1024 * 1024;
-    private readonly ProducerConsumer<StreamChunk> _chunksToZip;
+    private readonly ProducerConsumer<StreamChunk> _chunksToUnzip;
     private readonly ProducerConsumer<StreamChunk> _chunksToWrite;
     private readonly Stream _incomingStream;
     private readonly Stream _outgoingStream;
 
-    public BZipCompressor(Stream incomingStream, Stream outgoingStream)
+    public BZipDecompressor(Stream incomingStream, Stream outgoingStream)
     {
       _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
       _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
 
-      _chunksToZip = new ProducerConsumer<StreamChunk>(100);
+      _chunksToUnzip = new ProducerConsumer<StreamChunk>(100);
       _chunksToWrite = new ProducerConsumer<StreamChunk>();
     }
 
-    public void Compress()
+    public void Decompress()
     {
-      var readerThread = new Thread(_ => SplitStreamByChunks());
+      var readerThread = new Thread(_ => ReadStreamByChunks());
 
-      var archiverThreads = Enumerable
+      var unzipThreads = Enumerable
         .Range(0, Environment.ProcessorCount)
-        .Select(_ => new Thread(_ => ArchiveChunks()))
+        .Select(_ => new Thread(_ => UnzipChunks()))
         .ToList();
 
-      var writerThread = new Thread(_ => WriteArchivedChunks());
+      var writerThread = new Thread(_ => WriteUnzippedChunks());
 
       readerThread.Start();
-      archiverThreads.ForEach(x => x.Start());
+      unzipThreads.ForEach(x => x.Start());
       writerThread.Start();
 
       readerThread.Join();
-      archiverThreads.ForEach(x => x.Join());
+      unzipThreads.ForEach(x => x.Join());
 
       _chunksToWrite.CompleteAdding();
 
       writerThread.Join();
     }
 
-    private void SplitStreamByChunks()
+    private void ReadStreamByChunks()
     {
       var chunkIndex = 0;
+      Span<byte> chunkLengthBuffer = stackalloc byte[sizeof(int)];
 
       while (true)
       {
-        var memoryOwner = MemoryPool<byte>.Shared.Rent(ChunkSize);
-        var bytesRead = _incomingStream.Read(memoryOwner.Memory.Span);
-
+        var bytesRead = _incomingStream.Read(chunkLengthBuffer);
         if (bytesRead == 0)
         {
-          memoryOwner.Dispose();
           break;
         }
 
+        // TODO Probably it's better to allocate same size buffer every time
+        var chunkLength = BitConverter.ToInt32(chunkLengthBuffer);
+        var memoryOwner = MemoryPool<byte>.Shared.Rent(chunkLength);
+
+        bytesRead = _incomingStream.Read(memoryOwner.Memory.Span);
+
+        if (bytesRead == 0)
+        {
+          // TODO Add error handling
+          throw new InvalidOperationException("Invalid format");
+        }
+
         var chunk = new StreamChunk(chunkIndex, memoryOwner, bytesRead);
-        _chunksToZip.TryAdd(chunk);
+        _chunksToUnzip.TryAdd(chunk);
 
         chunkIndex++;
       }
 
-      _chunksToZip.CompleteAdding();
+      _chunksToUnzip.CompleteAdding();
     }
 
-    private void ArchiveChunks()
+    private void UnzipChunks()
     {
-      while (_chunksToZip.TryTake(out var chunk))
+      while (_chunksToUnzip.TryTake(out var chunk))
       {
-        var archivedChunk = ArchiveChunk(chunk);
+        var unzippedChunk = UnzipChunk(chunk);
         chunk.Dispose();
 
-        _chunksToWrite.TryAdd(archivedChunk);
+        _chunksToWrite.TryAdd(unzippedChunk);
       }
 
-      StreamChunk ArchiveChunk(StreamChunk chunk)
+      StreamChunk UnzipChunk(StreamChunk chunk)
       {
         var memoryOwner = MemoryPool<byte>.Shared.Rent(ChunkSize * 2);
 
         using var ms = new SuperMemoryStream(memoryOwner.Memory);
-        using var gZipStream = new GZipStream(ms, CompressionLevel.Optimal);
+        using var gZipStream = new GZipStream(ms, CompressionMode.Decompress);
 
         gZipStream.Write(chunk.Span);
         gZipStream.Flush();
@@ -96,7 +106,7 @@ namespace BZip
       }
     }
 
-    private void WriteArchivedChunks()
+    private void WriteUnzippedChunks()
     {
       var comparer = Comparer<StreamChunk>.Create((x, y) => x.Index - y.Index);
       var sprinters = new OrderedList<StreamChunk>(comparer);
