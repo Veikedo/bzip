@@ -11,8 +11,8 @@ namespace BZip
   public class BZipCompressor
   {
     private const int ChunkSize = 1 * 1024 * 1024;
-    private readonly ProducerConsumer<StreamChunk> _chunksToZip;
     private readonly ProducerConsumer<StreamChunk> _chunksToWrite;
+    private readonly ProducerConsumer<StreamChunk> _chunksToZip;
     private readonly Stream _incomingStream;
     private readonly Stream _outgoingStream;
 
@@ -123,7 +123,7 @@ namespace BZip
 
       void WriteBlockAndIncrementIndex(StreamChunk chunk)
       {
-        var blockLength = BitConverter.GetBytes(chunk.Index);
+        var blockLength = BitConverter.GetBytes(chunk.Span.Length);
 
         _outgoingStream.Write(blockLength);
         _outgoingStream.Write(chunk.Span);

@@ -55,8 +55,8 @@ namespace BZip
 
       while (true)
       {
-        var bytesRead = _incomingStream.Read(chunkLengthBuffer);
-        if (bytesRead == 0)
+        var chunkLengthBytesRead = _incomingStream.Read(chunkLengthBuffer);
+        if (chunkLengthBytesRead == 0)
         {
           break;
         }
@@ -65,7 +65,7 @@ namespace BZip
         var chunkLength = BitConverter.ToInt32(chunkLengthBuffer);
         var memoryOwner = MemoryPool<byte>.Shared.Rent(chunkLength);
 
-        bytesRead = _incomingStream.Read(memoryOwner.Memory.Span);
+        var bytesRead = _incomingStream.Read(memoryOwner.Memory.Span.Slice(0, chunkLength));
 
         if (bytesRead == 0)
         {
@@ -96,13 +96,13 @@ namespace BZip
       {
         var memoryOwner = MemoryPool<byte>.Shared.Rent(ChunkSize * 2);
 
-        using var ms = new SuperMemoryStream(memoryOwner.Memory);
+        using var ms = new MemoryStream(chunk.Span.ToArray());
         using var gZipStream = new GZipStream(ms, CompressionMode.Decompress);
 
-        gZipStream.Write(chunk.Span);
+        var bytesRead = gZipStream.Read(memoryOwner.Memory.Span);
         gZipStream.Flush();
 
-        return new StreamChunk(chunk.Index, memoryOwner, (int) ms.Position);
+        return new StreamChunk(chunk.Index, memoryOwner, bytesRead);
       }
     }
 
@@ -133,11 +133,7 @@ namespace BZip
 
       void WriteBlockAndIncrementIndex(StreamChunk chunk)
       {
-        var blockLength = BitConverter.GetBytes(chunk.Index);
-
-        _outgoingStream.Write(blockLength);
         _outgoingStream.Write(chunk.Span);
-
         nextIndexToWrite++;
       }
     }

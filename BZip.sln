@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BZip", "BZip\BZip.csproj", "{1DDEA025-7BC9-450E-B1FA-15E124CE50A2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BZip.Tests", "BZip.Tests\BZip.Tests.csproj", "{F39E1150-BD4C-4539-B84B-6E8917A145DC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{1DDEA025-7BC9-450E-B1FA-15E124CE50A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1DDEA025-7BC9-450E-B1FA-15E124CE50A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1DDEA025-7BC9-450E-B1FA-15E124CE50A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F39E1150-BD4C-4539-B84B-6E8917A145DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F39E1150-BD4C-4539-B84B-6E8917A145DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F39E1150-BD4C-4539-B84B-6E8917A145DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F39E1150-BD4C-4539-B84B-6E8917A145DC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

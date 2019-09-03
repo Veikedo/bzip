@@ -7,6 +7,7 @@ namespace BZip
   {
     private readonly int _bytesRead;
     private readonly IMemoryOwner<byte> _memoryOwner;
+
     public StreamChunk(int chunkIndex, IMemoryOwner<byte> memoryOwner, int bytesRead)
     {
       _memoryOwner = memoryOwner;

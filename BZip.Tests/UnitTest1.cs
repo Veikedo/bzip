@@ -1,12 +1,21 @@
-﻿using System;
 using System.Diagnostics;
 using System.IO;
+using Xunit;
+using Xunit.Abstractions;
 
-namespace BZip
+namespace BZip.Tests
 {
-  internal class Program
+  public class UnitTest1
   {
-    private static void Main(string[] args)
+    public UnitTest1(ITestOutputHelper output)
+    {
+      _output = output;
+    }
+
+    private readonly ITestOutputHelper _output;
+
+    [Fact]
+    public void Test1()
     {
       const string filePath = "C:/temp/test.exe";
 
@@ -54,7 +63,7 @@ namespace BZip
         decompressor.Decompress();
       }
 
-      Console.WriteLine(sw.Elapsed.ToString());
+      _output.WriteLine(sw.Elapsed.ToString());
     }
   }
 }
