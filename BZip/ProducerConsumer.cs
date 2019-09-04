@@ -8,6 +8,7 @@ namespace BZip
   {
     private const int UnboundedCapacity = -1;
     private readonly int _boundedCapacity;
+    private readonly SemaphoreSlim _bulkhead;
     private readonly Queue<T> _queue = new Queue<T>();
     private readonly object _sync = new object();
     private bool _isDead;
@@ -20,6 +21,11 @@ namespace BZip
       }
 
       _boundedCapacity = boundedCapacity;
+
+      if (boundedCapacity != UnboundedCapacity)
+      {
+        _bulkhead = new SemaphoreSlim(boundedCapacity, boundedCapacity);
+      }
     }
 
     public ProducerConsumer() : this(UnboundedCapacity)
@@ -32,6 +38,8 @@ namespace BZip
       {
         throw new ArgumentNullException(nameof(value));
       }
+
+      _bulkhead?.Wait();
 
       lock (_sync)
       {
@@ -63,6 +71,10 @@ namespace BZip
         }
 
         value = _queue.Dequeue();
+        if (!_isDead)
+        {
+          _bulkhead?.Release();
+        }
 
         return true;
       }
@@ -73,6 +85,16 @@ namespace BZip
       lock (_sync)
       {
         _isDead = true;
+
+        if (_bulkhead != null)
+        {
+          var currentlyAcquired = _boundedCapacity - _bulkhead.CurrentCount;
+          if (currentlyAcquired > 0)
+          {
+            _bulkhead.Release(currentlyAcquired);
+          }
+        }
+
         Monitor.PulseAll(_sync);
       }
     }
