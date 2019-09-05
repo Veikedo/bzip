@@ -1,6 +1,5 @@
 using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -30,11 +29,11 @@ namespace BZip
       var readerThread = new Thread(_ => SplitStreamByChunks());
 
       var archiverThreads = Enumerable
-        .Range(0, Environment.ProcessorCount)
-        .Select(_ => new Thread(_ => ArchiveChunks()))
+        .Range(0, 1)
+        .Select(_ => new Thread(_ => ZipChunks()))
         .ToList();
 
-      var writerThread = new Thread(_ => WriteArchivedChunks());
+      var writerThread = new Thread(_ => WriteZippedChunks());
 
       readerThread.Start();
       archiverThreads.ForEach(x => x.Start());
@@ -72,34 +71,38 @@ namespace BZip
       _chunksToZip.CompleteAdding();
     }
 
-    private void ArchiveChunks()
+    private void ZipChunks()
     {
       while (_chunksToZip.TryTake(out var chunk))
       {
-        var archivedChunk = ArchiveChunk(chunk);
+        var zippedChunk = ZipChunk(chunk);
         chunk.Dispose();
 
-        _chunksToWrite.TryAdd(archivedChunk);
+        _chunksToWrite.TryAdd(zippedChunk);
       }
 
-      StreamChunk ArchiveChunk(StreamChunk chunk)
+      StreamChunk ZipChunk(StreamChunk chunk)
       {
-        var memoryOwner = MemoryPool<byte>.Shared.Rent(ChunkSize * 2);
+        using var ms = new MemoryStream();
+        using (var zipStream = new GZipStream(ms, CompressionLevel.Optimal, true))
+        {
+          zipStream.Write(chunk.Span);
+        }
 
-        using var ms = new SuperMemoryStream(memoryOwner.Memory);
-        using var gZipStream = new GZipStream(ms, CompressionLevel.Optimal);
+//        var array = ms.ToArray();
+        
+        var bytesRead = (int) ms.Position;
+        var memoryOwner = MemoryPool<byte>.Shared.Rent(bytesRead);
+        
+        ms.Read(memoryOwner.Memory.Span);
 
-        gZipStream.Write(chunk.Span);
-        gZipStream.Flush();
-
-        return new StreamChunk(chunk.Index, memoryOwner, (int) ms.Position);
+        return new StreamChunk(chunk.Index, memoryOwner, bytesRead);
       }
     }
 
-    private void WriteArchivedChunks()
+    private void WriteZippedChunks()
     {
-      var comparer = Comparer<StreamChunk>.Create((x, y) => x.Index - y.Index);
-      var sprinters = new OrderedList<StreamChunk>(comparer);
+      var sprinters = new OrderedList<StreamChunk>();
 
       var nextIndexToWrite = 0;
 
@@ -107,11 +110,11 @@ namespace BZip
       {
         if (chunk.Index == nextIndexToWrite)
         {
-          WriteBlockAndIncrementIndex(chunk);
+          WriteChunkAndIncrementIndex(chunk);
 
           while (sprinters.TryPeek(out var sprinter) && sprinter.Index == nextIndexToWrite)
           {
-            WriteBlockAndIncrementIndex(sprinter);
+            WriteChunkAndIncrementIndex(sprinter);
             sprinters.RemoveSmallest();
           }
         }
@@ -121,7 +124,7 @@ namespace BZip
         }
       }
 
-      void WriteBlockAndIncrementIndex(StreamChunk chunk)
+      void WriteChunkAndIncrementIndex(StreamChunk chunk)
       {
         var blockLength = BitConverter.GetBytes(chunk.Span.Length);
 

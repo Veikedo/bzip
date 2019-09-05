@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 
@@ -30,7 +30,13 @@ namespace BZip
         );
 
         var compressor = new BZipCompressor(incomingStream, outgoingStream);
-        compressor.Compress();
+        try
+        {
+          compressor.Compress();
+        }
+        catch (Exception e)
+        {
+        }
       }
 
       {

@@ -21,7 +21,7 @@ namespace BZip
       _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
       _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
 
-      _chunksToUnzip = new ProducerConsumer<StreamChunk>(100);
+      _chunksToUnzip = new ProducerConsumer<StreamChunk>(5);
       _chunksToWrite = new ProducerConsumer<StreamChunk>();
     }
 
@@ -61,9 +61,9 @@ namespace BZip
           break;
         }
 
-        // TODO Probably it's better to allocate same size buffer every time
         var chunkLength = BitConverter.ToInt32(chunkLengthBuffer);
-        var memoryOwner = MemoryPool<byte>.Shared.Rent(chunkLength);
+        var minBufferSize = chunkLength > ChunkSize ? chunkLength : ChunkSize;
+        var memoryOwner = MemoryPool<byte>.Shared.Rent(minBufferSize);
 
         var bytesRead = _incomingStream.Read(memoryOwner.Memory.Span.Slice(0, chunkLength));
 

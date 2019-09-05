@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace BZip
@@ -7,9 +8,13 @@ namespace BZip
     private readonly IComparer<T> _comparer;
     private readonly List<T> _items;
 
+    public OrderedList() : this(Comparer<T>.Default)
+    {
+    }
+
     public OrderedList(IComparer<T> comparer)
     {
-      _comparer = comparer ?? Comparer<T>.Default;
+      _comparer = comparer ?? throw new ArgumentNullException(nameof(comparer));
       _items = new List<T>();
     }
 
