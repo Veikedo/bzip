@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
+using Nerdbank.Streams;
 
 namespace BZip
 {
@@ -26,25 +27,54 @@ namespace BZip
 
     public void Compress()
     {
-      var readerThread = new Thread(_ => SplitStreamByChunks());
+      Exception error = null;
+      var errorRaised = new ManualResetEventSlim();
+      var completed = new ManualResetEventSlim();
 
-      var archiverThreads = Enumerable
-        .Range(0, 1)
-        .Select(_ => new Thread(_ => ZipChunks()))
-        .ToList();
+      var workflow = new Thread(Workflow);
+      workflow.Start();
 
-      var writerThread = new Thread(_ => WriteZippedChunks());
+      WaitHandle.WaitAny(new[] {errorRaised.WaitHandle, completed.WaitHandle});
+      if (errorRaised.IsSet)
+      {
+        throw new Exception("Could not compress", error);
+      }
 
-      readerThread.Start();
-      archiverThreads.ForEach(x => x.Start());
-      writerThread.Start();
+      void Workflow()
+      {
+        var readerThread = new Thread(_ => CatchExceptions(SplitStreamByChunks));
 
-      readerThread.Join();
-      archiverThreads.ForEach(x => x.Join());
+        var zipThreads = Enumerable.Range(0, 1)
+          .Select(_ => new Thread(_ => CatchExceptions(ZipChunks)))
+          .ToList();
 
-      _chunksToWrite.CompleteAdding();
+        var writerThread = new Thread(_ => CatchExceptions(WriteZippedChunks));
 
-      writerThread.Join();
+        readerThread.Start();
+        zipThreads.ForEach(x => x.Start());
+        writerThread.Start();
+
+        readerThread.Join();
+        zipThreads.ForEach(x => x.Join());
+
+        _chunksToWrite.CompleteAdding();
+
+        writerThread.Join();
+        completed.Set();
+      }
+
+      void CatchExceptions(Action action)
+      {
+        try
+        {
+          action();
+        }
+        catch (Exception e)
+        {
+          error = e;
+          errorRaised.Set();
+        }
+      }
     }
 
     private void SplitStreamByChunks()
@@ -53,16 +83,20 @@ namespace BZip
 
       while (true)
       {
-        var memoryOwner = MemoryPool<byte>.Shared.Rent(ChunkSize);
-        var bytesRead = _incomingStream.Read(memoryOwner.Memory.Span);
+        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
+
+        var buffer = sequence.GetSpan(ChunkSize);
+        var bytesRead = _incomingStream.Read(buffer);
+
+        sequence.Advance(bytesRead);
 
         if (bytesRead == 0)
         {
-          memoryOwner.Dispose();
+          sequence.Dispose();
           break;
         }
 
-        var chunk = new StreamChunk(chunkIndex, memoryOwner, bytesRead);
+        var chunk = new StreamChunk(chunkIndex, sequence);
         _chunksToZip.TryAdd(chunk);
 
         chunkIndex++;
@@ -83,20 +117,15 @@ namespace BZip
 
       StreamChunk ZipChunk(StreamChunk chunk)
       {
-        using var ms = new MemoryStream();
-        using (var zipStream = new GZipStream(ms, CompressionLevel.Optimal, true))
+        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
+
+        using var buffer = sequence.AsStream();
+        using (var zipStream = new GZipStream(buffer, CompressionLevel.Optimal))
         {
-          zipStream.Write(chunk.Span);
+          chunk.Stream.CopyTo(zipStream);
         }
 
-//        var array = ms.ToArray();
-        
-        var bytesRead = (int) ms.Position;
-        var memoryOwner = MemoryPool<byte>.Shared.Rent(bytesRead);
-        
-        ms.Read(memoryOwner.Memory.Span);
-
-        return new StreamChunk(chunk.Index, memoryOwner, bytesRead);
+        return new StreamChunk(chunk.Index, sequence);
       }
     }
 
@@ -126,12 +155,14 @@ namespace BZip
 
       void WriteChunkAndIncrementIndex(StreamChunk chunk)
       {
-        var blockLength = BitConverter.GetBytes(chunk.Span.Length);
+        var blockLength = BitConverter.GetBytes(chunk.Stream.Length);
 
         _outgoingStream.Write(blockLength);
-        _outgoingStream.Write(chunk.Span);
+        chunk.Stream.CopyTo(_outgoingStream);
 
         nextIndexToWrite++;
+        
+        chunk.Dispose();
       }
     }
   }

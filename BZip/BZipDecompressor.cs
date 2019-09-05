@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
+using Nerdbank.Streams;
 
 namespace BZip
 {
@@ -38,7 +39,7 @@ namespace BZip
       WaitHandle.WaitAny(new[] {errorRaised.WaitHandle, completed.WaitHandle});
       if (errorRaised.IsSet)
       {
-        throw error;
+        throw new Exception("Could not decompress", error);
       }
 
       void Workflow()
@@ -92,18 +93,18 @@ namespace BZip
         }
 
         var chunkLength = BitConverter.ToInt32(chunkLengthBuffer);
-        var minBufferSize = chunkLength > ChunkSize ? chunkLength : ChunkSize;
-        var memoryOwner = MemoryPool<byte>.Shared.Rent(minBufferSize);
+        
+        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
 
-        var bytesRead = _incomingStream.Read(memoryOwner.Memory.Span.Slice(0, chunkLength));
+        var bytesRead = _incomingStream.Read(sequence.GetSpan(chunkLength).Slice(0, chunkLength));
+        sequence.Advance(bytesRead);
 
         if (bytesRead == 0)
         {
-          // TODO Add error handling
-          throw new InvalidOperationException("Invalid format");
+          throw new InvalidOperationException("Archive entry is corrupted");
         }
 
-        var chunk = new StreamChunk(chunkIndex, memoryOwner, bytesRead);
+        var chunk = new StreamChunk(chunkIndex, sequence);
         _chunksToUnzip.TryAdd(chunk);
 
         chunkIndex++;
@@ -124,22 +125,22 @@ namespace BZip
 
       StreamChunk UnzipChunk(StreamChunk chunk)
       {
-        var memoryOwner = MemoryPool<byte>.Shared.Rent(ChunkSize * 2);
+        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
 
-        using var ms = new MemoryStream(chunk.Span.ToArray());
-        using var gZipStream = new GZipStream(ms, CompressionMode.Decompress);
-
-        var bytesRead = gZipStream.Read(memoryOwner.Memory.Span);
+        using var gZipStream = new GZipStream(chunk.Stream, CompressionMode.Decompress);
+        var bytesRead = gZipStream.Read(sequence.GetSpan(ChunkSize));
+        
+        sequence.Advance(bytesRead);
+        
         gZipStream.Flush();
 
-        return new StreamChunk(chunk.Index, memoryOwner, bytesRead);
+        return new StreamChunk(chunk.Index, sequence);
       }
     }
 
     private void WriteUnzippedChunks()
     {
-      var comparer = Comparer<StreamChunk>.Create((x, y) => x.Index - y.Index);
-      var sprinters = new OrderedList<StreamChunk>(comparer);
+      var sprinters = new OrderedList<StreamChunk>();
 
       var nextIndexToWrite = 0;
 
@@ -163,7 +164,7 @@ namespace BZip
 
       void WriteBlockAndIncrementIndex(StreamChunk chunk)
       {
-        _outgoingStream.Write(chunk.Span);
+        chunk.Stream.CopyTo(_outgoingStream);
         nextIndexToWrite++;
       }
     }

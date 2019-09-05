@@ -1,24 +1,26 @@
 using System;
-using System.Buffers;
+using System.IO;
+using Nerdbank.Streams;
 
 namespace BZip
 {
   internal class StreamChunk : IDisposable, IComparable<StreamChunk>
   {
-    private readonly int _bytesRead;
-    private readonly IMemoryOwner<byte> _memoryOwner;
-    private readonly Memory<byte> _memory;
+    private readonly Sequence<byte> _sequence;
 
-    public StreamChunk(int chunkIndex, IMemoryOwner<byte> memoryOwner, int bytesRead)
+    public StreamChunk(int chunkIndex, Sequence<byte> sequence)
     {
-      _memoryOwner = memoryOwner;
-      _memory = memoryOwner.Memory.Slice(0, bytesRead);
-      _bytesRead = bytesRead;
+      if (chunkIndex < 0)
+      {
+        throw new ArgumentOutOfRangeException(nameof(chunkIndex));
+      }
+
+      _sequence = sequence ?? throw new ArgumentNullException(nameof(sequence));
       Index = chunkIndex;
     }
 
     public int Index { get; }
-    public Span<byte> Span => _memory.Span;
+    public Stream Stream => _sequence.AsReadOnlySequence.AsStream();
 
     public int CompareTo(StreamChunk other)
     {
@@ -37,7 +39,7 @@ namespace BZip
 
     public void Dispose()
     {
-      _memoryOwner.Dispose();
+      _sequence.Dispose();
     }
   }
 }

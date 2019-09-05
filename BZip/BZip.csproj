@@ -6,4 +6,8 @@
     <LangVersion>8</LangVersion>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Nerdbank.Streams" Version="2.3.26" />
+  </ItemGroup>
+
 </Project>
