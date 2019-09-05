@@ -165,6 +165,7 @@ namespace BZip
       void WriteBlockAndIncrementIndex(StreamChunk chunk)
       {
         chunk.Stream.CopyTo(_outgoingStream);
+        chunk.Dispose();
         nextIndexToWrite++;
       }
     }

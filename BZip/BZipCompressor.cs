@@ -44,7 +44,7 @@ namespace BZip
       {
         var readerThread = new Thread(_ => CatchExceptions(SplitStreamByChunks));
 
-        var zipThreads = Enumerable.Range(0, 1)
+        var zipThreads = Enumerable.Range(0, Environment.ProcessorCount)
           .Select(_ => new Thread(_ => CatchExceptions(ZipChunks)))
           .ToList();
 
@@ -155,13 +155,13 @@ namespace BZip
 
       void WriteChunkAndIncrementIndex(StreamChunk chunk)
       {
-        var blockLength = BitConverter.GetBytes(chunk.Stream.Length);
+        var blockLength = BitConverter.GetBytes((int) chunk.Stream.Length);
 
         _outgoingStream.Write(blockLength);
         chunk.Stream.CopyTo(_outgoingStream);
 
         nextIndexToWrite++;
-        
+
         chunk.Dispose();
       }
     }
