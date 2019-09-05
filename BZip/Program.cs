@@ -30,13 +30,7 @@ namespace BZip
         );
 
         var compressor = new BZipCompressor(incomingStream, outgoingStream);
-        try
-        {
-          compressor.Compress();
-        }
-        catch (Exception e)
-        {
-        }
+        compressor.Compress();
       }
 
       {

@@ -23,7 +23,7 @@ namespace BZip
       _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
       _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
 
-      _chunksToUnzip = new ProducerConsumer<StreamChunk>(5);
+      _chunksToUnzip = new ProducerConsumer<StreamChunk>(100);
       _chunksToWrite = new ProducerConsumer<StreamChunk>();
     }
 
@@ -93,19 +93,29 @@ namespace BZip
         }
 
         var chunkLength = BitConverter.ToInt32(chunkLengthBuffer);
-        
         var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
 
-        var bytesRead = _incomingStream.Read(sequence.GetSpan(chunkLength).Slice(0, chunkLength));
-        sequence.Advance(bytesRead);
-
-        if (bytesRead == 0)
+        try
         {
-          throw new InvalidOperationException("Archive entry is corrupted");
-        }
+          var bufferSize = chunkLength > ChunkSize ? chunkLength : ChunkSize;
+          var buffer = sequence.GetSpan(bufferSize).Slice(0, chunkLength);
+          var bytesRead = _incomingStream.Read(buffer);
 
-        var chunk = new StreamChunk(chunkIndex, sequence);
-        _chunksToUnzip.TryAdd(chunk);
+          if (bytesRead == 0)
+          {
+            throw new InvalidOperationException("Archive entry is corrupted");
+          }
+
+          sequence.Advance(bytesRead);
+
+          var chunk = new StreamChunk(chunkIndex, sequence);
+          _chunksToUnzip.TryAdd(chunk);
+        }
+        catch
+        {
+          sequence.Dispose();
+          throw;
+        }
 
         chunkIndex++;
       }
@@ -129,9 +139,9 @@ namespace BZip
 
         using var gZipStream = new GZipStream(chunk.Stream, CompressionMode.Decompress);
         var bytesRead = gZipStream.Read(sequence.GetSpan(ChunkSize));
-        
+
         sequence.Advance(bytesRead);
-        
+
         gZipStream.Flush();
 
         return new StreamChunk(chunk.Index, sequence);

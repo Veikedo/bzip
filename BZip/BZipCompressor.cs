@@ -85,19 +85,27 @@ namespace BZip
       {
         var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
 
-        var buffer = sequence.GetSpan(ChunkSize);
-        var bytesRead = _incomingStream.Read(buffer);
+        try
+        {
+          var buffer = sequence.GetSpan(ChunkSize);
+          var bytesRead = _incomingStream.Read(buffer);
 
-        sequence.Advance(bytesRead);
+          if (bytesRead == 0)
+          {
+            sequence.Dispose();
+            break;
+          }
 
-        if (bytesRead == 0)
+          sequence.Advance(bytesRead);
+
+          var chunk = new StreamChunk(chunkIndex, sequence);
+          _chunksToZip.TryAdd(chunk);
+        }
+        catch
         {
           sequence.Dispose();
-          break;
+          throw;
         }
-
-        var chunk = new StreamChunk(chunkIndex, sequence);
-        _chunksToZip.TryAdd(chunk);
 
         chunkIndex++;
       }
