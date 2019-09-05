@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
+using Microsoft.Win32.SafeHandles;
 
 namespace BZip
 {
@@ -27,25 +28,54 @@ namespace BZip
 
     public void Decompress()
     {
-      var readerThread = new Thread(_ => ReadStreamByChunks());
+      Exception error = null;
+      var errorRaised = new ManualResetEventSlim();
+      var completed = new ManualResetEventSlim();
 
-      var unzipThreads = Enumerable
-        .Range(0, Environment.ProcessorCount)
-        .Select(_ => new Thread(_ => UnzipChunks()))
-        .ToList();
+      var workflow = new Thread(Workflow);
+      workflow.Start();
 
-      var writerThread = new Thread(_ => WriteUnzippedChunks());
+      WaitHandle.WaitAny(new[] {errorRaised.WaitHandle, completed.WaitHandle});
+      if (errorRaised.IsSet)
+      {
+        throw error;
+      }
 
-      readerThread.Start();
-      unzipThreads.ForEach(x => x.Start());
-      writerThread.Start();
+      void Workflow()
+      {
+        var readerThread = new Thread(_ => CatchExceptions(ReadStreamByChunks));
 
-      readerThread.Join();
-      unzipThreads.ForEach(x => x.Join());
+        var unzipThreads = Enumerable.Range(0, Environment.ProcessorCount)
+          .Select(_ => new Thread(_ => CatchExceptions(UnzipChunks)))
+          .ToList();
 
-      _chunksToWrite.CompleteAdding();
+        var writerThread = new Thread(_ => CatchExceptions(WriteUnzippedChunks));
 
-      writerThread.Join();
+        readerThread.Start();
+        unzipThreads.ForEach(x => x.Start());
+        writerThread.Start();
+
+        readerThread.Join();
+        unzipThreads.ForEach(x => x.Join());
+
+        _chunksToWrite.CompleteAdding();
+
+        writerThread.Join();
+        completed.Set();
+      }
+
+      void CatchExceptions(Action action)
+      {
+        try
+        {
+          action();
+        }
+        catch (Exception e)
+        {
+          error = e;
+          errorRaised.Set();
+        }
+      }
     }
 
     private void ReadStreamByChunks()
