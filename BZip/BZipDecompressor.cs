@@ -29,7 +29,7 @@ namespace BZip
 
     public void Decompress()
     {
-      Exception error = null;
+      Exception? error = null;
       var errorRaised = new ManualResetEventSlim();
       var completed = new ManualResetEventSlim();
 
@@ -136,13 +136,11 @@ namespace BZip
       StreamChunk UnzipChunk(StreamChunk chunk)
       {
         var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
-
-        using var gZipStream = new GZipStream(chunk.Stream, CompressionMode.Decompress);
-        var bytesRead = gZipStream.Read(sequence.GetSpan(ChunkSize));
-
-        sequence.Advance(bytesRead);
-
-        gZipStream.Flush();
+        using (var buffer = sequence.AsStream())
+        {
+          using var zipStream = new GZipStream(chunk.Stream, CompressionMode.Decompress);
+          zipStream.CopyTo(buffer);
+        }
 
         return new StreamChunk(chunk.Index, sequence);
       }

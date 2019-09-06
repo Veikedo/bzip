@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 
 namespace BZip
@@ -8,7 +9,7 @@ namespace BZip
   {
     private const int UnboundedCapacity = -1;
     private readonly int _boundedCapacity;
-    private readonly SemaphoreSlim _bulkhead;
+    private readonly SemaphoreSlim? _bulkhead;
     private readonly Queue<T> _queue = new Queue<T>();
     private readonly object _sync = new object();
     private bool _isDead;
@@ -55,7 +56,7 @@ namespace BZip
       }
     }
 
-    public bool TryTake(out T value)
+    public bool TryTake([MaybeNullWhen(false)] out T value)
     {
       lock (_sync)
       {

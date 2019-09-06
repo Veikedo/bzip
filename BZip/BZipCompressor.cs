@@ -27,7 +27,7 @@ namespace BZip
 
     public void Compress()
     {
-      Exception error = null;
+      Exception? error = null;
       var errorRaised = new ManualResetEventSlim();
       var completed = new ManualResetEventSlim();
 
@@ -126,10 +126,9 @@ namespace BZip
       StreamChunk ZipChunk(StreamChunk chunk)
       {
         var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
-
-        using var buffer = sequence.AsStream();
-        using (var zipStream = new GZipStream(buffer, CompressionLevel.Optimal))
+        using (var buffer = sequence.AsStream())
         {
+          using var zipStream = new GZipStream(buffer, CompressionLevel.Optimal);
           chunk.Stream.CopyTo(zipStream);
         }
 
