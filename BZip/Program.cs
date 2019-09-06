@@ -30,7 +30,7 @@ namespace BZip
         );
 
         var compressor = new BZipCompressor(incomingStream, outgoingStream);
-        compressor.Compress();
+        compressor.Process();
       }
 
       {
@@ -51,7 +51,7 @@ namespace BZip
         );
 
         var decompressor = new BZipDecompressor(incomingStream, outgoingStream);
-        decompressor.Decompress();
+        decompressor.Process();
       }
 
       Console.WriteLine(sw.Elapsed.ToString());

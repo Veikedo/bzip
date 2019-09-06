@@ -42,7 +42,7 @@ namespace BZip.Tests
         );
 
         var compressor = new BZipCompressor(incomingStream, outgoingStream);
-        compressor.Compress();
+        compressor.Process();
       }
 
       {
@@ -63,7 +63,7 @@ namespace BZip.Tests
         );
 
         var decompressor = new BZipDecompressor(incomingStream, outgoingStream);
-        decompressor.Decompress();
+        decompressor.Process();
       }
 
       using var unzippedFile = new FileStream(filePath + ".unzip.exe", FileMode.Open);

@@ -1,181 +1,61 @@
 using System;
 using System.Buffers;
-using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Compression;
-using System.Linq;
-using System.Threading;
-using Microsoft.Win32.SafeHandles;
 using Nerdbank.Streams;
 
 namespace BZip
 {
-  public class BZipDecompressor
+  internal class BZipDecompressor : BZipProcessor
   {
-    private const int ChunkSize = 1 * 1024 * 1024;
-    private readonly ProducerConsumer<StreamChunk> _chunksToUnzip;
-    private readonly ProducerConsumer<StreamChunk> _chunksToWrite;
-    private readonly Stream _incomingStream;
-    private readonly Stream _outgoingStream;
-
-    public BZipDecompressor(Stream incomingStream, Stream outgoingStream)
+    public BZipDecompressor(Stream incomingStream, Stream outgoingStream) : base(incomingStream, outgoingStream)
     {
-      _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
-      _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
-
-      _chunksToUnzip = new ProducerConsumer<StreamChunk>(100);
-      _chunksToWrite = new ProducerConsumer<StreamChunk>();
     }
 
-    public void Decompress()
+    protected override bool TryGetNextChunk([MaybeNullWhen(false)] out Sequence<byte>? chunk)
     {
-      Exception? error = null;
-      var errorRaised = new ManualResetEventSlim();
-      var completed = new ManualResetEventSlim();
-
-      var workflow = new Thread(Workflow);
-      workflow.Start();
-
-      WaitHandle.WaitAny(new[] {errorRaised.WaitHandle, completed.WaitHandle});
-      if (errorRaised.IsSet)
-      {
-        throw new Exception("Could not decompress", error);
-      }
-
-      void Workflow()
-      {
-        var readerThread = new Thread(_ => CatchExceptions(ReadStreamByChunks));
-
-        var unzipThreads = Enumerable.Range(0, Environment.ProcessorCount)
-          .Select(_ => new Thread(_ => CatchExceptions(UnzipChunks)))
-          .ToList();
-
-        var writerThread = new Thread(_ => CatchExceptions(WriteUnzippedChunks));
-
-        readerThread.Start();
-        unzipThreads.ForEach(x => x.Start());
-        writerThread.Start();
-
-        readerThread.Join();
-        unzipThreads.ForEach(x => x.Join());
-
-        _chunksToWrite.CompleteAdding();
-
-        writerThread.Join();
-        completed.Set();
-      }
-
-      void CatchExceptions(Action action)
-      {
-        try
-        {
-          action();
-        }
-        catch (Exception e)
-        {
-          error = e;
-          errorRaised.Set();
-        }
-      }
-    }
-
-    private void ReadStreamByChunks()
-    {
-      var chunkIndex = 0;
       Span<byte> chunkLengthBuffer = stackalloc byte[sizeof(int)];
+      var chunkLengthBytesRead = _incomingStream.Read(chunkLengthBuffer);
 
-      while (true)
+      if (chunkLengthBytesRead == 0)
       {
-        var chunkLengthBytesRead = _incomingStream.Read(chunkLengthBuffer);
-        if (chunkLengthBytesRead == 0)
-        {
-          break;
-        }
-
-        var chunkLength = BitConverter.ToInt32(chunkLengthBuffer);
-        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
-
-        try
-        {
-          var bufferSize = chunkLength > ChunkSize ? chunkLength : ChunkSize;
-          var buffer = sequence.GetSpan(bufferSize).Slice(0, chunkLength);
-          var bytesRead = _incomingStream.Read(buffer);
-
-          if (bytesRead == 0)
-          {
-            throw new InvalidOperationException("Archive entry is corrupted");
-          }
-
-          sequence.Advance(bytesRead);
-
-          var chunk = new StreamChunk(chunkIndex, sequence);
-          _chunksToUnzip.TryAdd(chunk);
-        }
-        catch
-        {
-          sequence.Dispose();
-          throw;
-        }
-
-        chunkIndex++;
+        chunk = null;
+        return false;
       }
 
-      _chunksToUnzip.CompleteAdding();
+      var chunkLength = BitConverter.ToInt32(chunkLengthBuffer);
+      var bufferSize = chunkLength > ChunkSize ? chunkLength : ChunkSize;
+
+      chunk = new Sequence<byte>(ArrayPool<byte>.Shared);
+      try
+      {
+        var buffer = chunk.GetSpan(bufferSize).Slice(0, chunkLength);
+        var bytesRead = _incomingStream.Read(buffer);
+        chunk.Advance(bytesRead);
+
+        if (bytesRead < chunkLength)
+        {
+          throw new InvalidOperationException("Archive entry is corrupted");
+        }
+      }
+      catch
+      {
+        chunk.Dispose();
+        throw;
+      }
+
+      return true;
     }
 
-    private void UnzipChunks()
+    protected override void ProcessChunk(Stream buffer, StreamChunk chunk)
     {
-      while (_chunksToUnzip.TryTake(out var chunk))
-      {
-        var unzippedChunk = UnzipChunk(chunk);
-        chunk.Dispose();
-
-        _chunksToWrite.TryAdd(unzippedChunk);
-      }
-
-      StreamChunk UnzipChunk(StreamChunk chunk)
-      {
-        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
-        using (var buffer = sequence.AsStream())
-        {
-          using var zipStream = new GZipStream(chunk.Stream, CompressionMode.Decompress);
-          zipStream.CopyTo(buffer);
-        }
-
-        return new StreamChunk(chunk.Index, sequence);
-      }
+      using var zipStream = new GZipStream(chunk.Stream, CompressionMode.Decompress);
+      zipStream.CopyTo(buffer);
     }
-
-    private void WriteUnzippedChunks()
+    
+    protected override void WriteBlockLength(StreamChunk chunk)
     {
-      var sprinters = new OrderedList<StreamChunk>();
-
-      var nextIndexToWrite = 0;
-
-      while (_chunksToWrite.TryTake(out var chunk))
-      {
-        if (chunk.Index == nextIndexToWrite)
-        {
-          WriteBlockAndIncrementIndex(chunk);
-
-          while (sprinters.TryPeek(out var sprinter) && sprinter.Index == nextIndexToWrite)
-          {
-            WriteBlockAndIncrementIndex(sprinter);
-            sprinters.RemoveSmallest();
-          }
-        }
-        else
-        {
-          sprinters.Add(chunk);
-        }
-      }
-
-      void WriteBlockAndIncrementIndex(StreamChunk chunk)
-      {
-        chunk.Stream.CopyTo(_outgoingStream);
-        chunk.Dispose();
-        nextIndexToWrite++;
-      }
     }
   }
 }

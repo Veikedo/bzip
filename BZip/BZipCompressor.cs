@@ -2,175 +2,51 @@ using System;
 using System.Buffers;
 using System.IO;
 using System.IO.Compression;
-using System.Linq;
-using System.Threading;
 using Nerdbank.Streams;
 
 namespace BZip
 {
-  public class BZipCompressor
+  internal class BZipCompressor : BZipProcessor
   {
-    private const int ChunkSize = 1 * 1024 * 1024;
-    private readonly ProducerConsumer<StreamChunk> _chunksToWrite;
-    private readonly ProducerConsumer<StreamChunk> _chunksToZip;
-    private readonly Stream _incomingStream;
-    private readonly Stream _outgoingStream;
-
-    public BZipCompressor(Stream incomingStream, Stream outgoingStream)
+    public BZipCompressor(Stream incomingStream, Stream outgoingStream) : base(incomingStream, outgoingStream)
     {
-      _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
-      _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
-
-      _chunksToZip = new ProducerConsumer<StreamChunk>(100);
-      _chunksToWrite = new ProducerConsumer<StreamChunk>();
     }
 
-    public void Compress()
+    protected override bool TryGetNextChunk(out Sequence<byte> chunk)
     {
-      Exception? error = null;
-      var errorRaised = new ManualResetEventSlim();
-      var completed = new ManualResetEventSlim();
+      chunk = new Sequence<byte>(ArrayPool<byte>.Shared);
 
-      var workflow = new Thread(Workflow);
-      workflow.Start();
-
-      WaitHandle.WaitAny(new[] {errorRaised.WaitHandle, completed.WaitHandle});
-      if (errorRaised.IsSet)
+      try
       {
-        throw new Exception("Could not compress", error);
-      }
-
-      void Workflow()
-      {
-        var readerThread = new Thread(_ => CatchExceptions(SplitStreamByChunks));
-
-        var zipThreads = Enumerable.Range(0, Environment.ProcessorCount)
-          .Select(_ => new Thread(_ => CatchExceptions(ZipChunks)))
-          .ToList();
-
-        var writerThread = new Thread(_ => CatchExceptions(WriteZippedChunks));
-
-        readerThread.Start();
-        zipThreads.ForEach(x => x.Start());
-        writerThread.Start();
-
-        readerThread.Join();
-        zipThreads.ForEach(x => x.Join());
-
-        _chunksToWrite.CompleteAdding();
-
-        writerThread.Join();
-        completed.Set();
-      }
-
-      void CatchExceptions(Action action)
-      {
-        try
+        var buffer = chunk.GetSpan(ChunkSize);
+        var bytesRead = _incomingStream.Read(buffer);
+        if (bytesRead == 0)
         {
-          action();
-        }
-        catch (Exception e)
-        {
-          error = e;
-          errorRaised.Set();
-        }
-      }
-    }
-
-    private void SplitStreamByChunks()
-    {
-      var chunkIndex = 0;
-
-      while (true)
-      {
-        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
-
-        try
-        {
-          var buffer = sequence.GetSpan(ChunkSize);
-          var bytesRead = _incomingStream.Read(buffer);
-
-          if (bytesRead == 0)
-          {
-            sequence.Dispose();
-            break;
-          }
-
-          sequence.Advance(bytesRead);
-
-          var chunk = new StreamChunk(chunkIndex, sequence);
-          _chunksToZip.TryAdd(chunk);
-        }
-        catch
-        {
-          sequence.Dispose();
-          throw;
+          chunk.Dispose();
+          return false;
         }
 
-        chunkIndex++;
+        chunk.Advance(bytesRead);
       }
-
-      _chunksToZip.CompleteAdding();
-    }
-
-    private void ZipChunks()
-    {
-      while (_chunksToZip.TryTake(out var chunk))
+      catch
       {
-        var zippedChunk = ZipChunk(chunk);
         chunk.Dispose();
-
-        _chunksToWrite.TryAdd(zippedChunk);
+        throw;
       }
 
-      StreamChunk ZipChunk(StreamChunk chunk)
-      {
-        var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
-        using (var buffer = sequence.AsStream())
-        {
-          using var zipStream = new GZipStream(buffer, CompressionLevel.Optimal);
-          chunk.Stream.CopyTo(zipStream);
-        }
-
-        return new StreamChunk(chunk.Index, sequence);
-      }
+      return true;
     }
 
-    private void WriteZippedChunks()
+    protected override void ProcessChunk(Stream buffer, StreamChunk chunk)
     {
-      var sprinters = new OrderedList<StreamChunk>();
+      using var zipStream = new GZipStream(buffer, CompressionLevel.Optimal);
+      chunk.Stream.CopyTo(zipStream);
+    }
 
-      var nextIndexToWrite = 0;
-
-      while (_chunksToWrite.TryTake(out var chunk))
-      {
-        if (chunk.Index == nextIndexToWrite)
-        {
-          WriteChunkAndIncrementIndex(chunk);
-
-          while (sprinters.TryPeek(out var sprinter) && sprinter.Index == nextIndexToWrite)
-          {
-            WriteChunkAndIncrementIndex(sprinter);
-            sprinters.RemoveSmallest();
-          }
-        }
-        else
-        {
-          sprinters.Add(chunk);
-        }
-      }
-
-      void WriteChunkAndIncrementIndex(StreamChunk chunk)
-      {
-        var blockLength = BitConverter.GetBytes((int) chunk.Stream.Length);
-
-        _outgoingStream.Write(blockLength);
-        chunk.Stream.CopyTo(_outgoingStream);
-
-        nextIndexToWrite++;
-
-        chunk.Dispose();
-      }
+    protected override void WriteBlockLength(StreamChunk chunk)
+    {
+      var blockLength = BitConverter.GetBytes((int) chunk.Stream.Length);
+      _outgoingStream.Write(blockLength);
     }
   }
 }

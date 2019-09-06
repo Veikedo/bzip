@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace BZip
 {
@@ -33,7 +34,7 @@ namespace BZip
       }
     }
 
-    public bool TryPeek(out T item)
+    public bool TryPeek([MaybeNullWhen(false)] out T item)
     {
       if (_items.Count == 0)
       {
