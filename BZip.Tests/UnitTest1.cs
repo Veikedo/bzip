@@ -25,52 +25,26 @@ namespace BZip.Tests
       var sw = Stopwatch.StartNew();
 
       {
-        using var incomingStream = new FileStream(
-          filePath,
-          FileMode.Open,
-          FileAccess.Read,
-          FileShare.Read,
-          4096,
-          FileOptions.SequentialScan
-        );
-
-        using var outgoingStream = new FileStream(
-          filePath + ".bz",
-          FileMode.Create,
-          FileAccess.Write,
-          FileShare.None
-        );
+        using var incomingStream = new FileStream(filePath, FileMode.Open);
+        using var outgoingStream = new FileStream(filePath + ".bz", FileMode.Create);
 
         var compressor = new BZipCompressor(incomingStream, outgoingStream);
-        compressor.Process();
+        compressor.Compress();
       }
 
       {
-        using var incomingStream = new FileStream(
-          filePath + ".bz",
-          FileMode.Open,
-          FileAccess.Read,
-          FileShare.Read,
-          4096,
-          FileOptions.SequentialScan
-        );
+        using var incomingStream = new FileStream(filePath + ".bz", FileMode.Open);
+        using var outgoingStream = new FileStream(filePath + ".unzip.exe", FileMode.Create);
 
-        using var outgoingStream = new FileStream(
-          filePath + ".unzip.exe",
-          FileMode.Create,
-          FileAccess.Write,
-          FileShare.None
-        );
-
-        var decompressor = new BZipDecompressor(incomingStream, outgoingStream);
-        decompressor.Process();
+        var compressor = new BZipDecompressor(incomingStream, outgoingStream);
+        compressor.Decompress();
       }
 
       using var unzippedFile = new FileStream(filePath + ".unzip.exe", FileMode.Open);
 
       using var md5 = MD5.Create();
       var actualHash = md5.ComputeHash(unzippedFile);
-      
+
       Assert.Equal(_fixture.FileHash, actualHash);
 
       _output.WriteLine(sw.Elapsed.ToString());

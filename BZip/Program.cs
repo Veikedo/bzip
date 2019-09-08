@@ -30,7 +30,7 @@ namespace BZip
         );
 
         var compressor = new BZipCompressor(incomingStream, outgoingStream);
-        compressor.Process();
+        compressor.Compress();
       }
 
       {
@@ -50,8 +50,8 @@ namespace BZip
           FileShare.None
         );
 
-        var decompressor = new BZipDecompressor(incomingStream, outgoingStream);
-        decompressor.Process();
+        var compressor = new BZipDecompressor(incomingStream, outgoingStream);
+        compressor.Decompress();
       }
 
       Console.WriteLine(sw.Elapsed.ToString());

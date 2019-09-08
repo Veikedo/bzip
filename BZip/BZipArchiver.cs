@@ -7,18 +7,22 @@ using Nerdbank.Streams;
 
 namespace BZip
 {
-  internal abstract class BZipProcessor
+  /// <summary>
+  ///   Encapsulates common logic to zip/unzip files
+  /// </summary>
+  internal sealed class BZipArchiver
   {
-    protected const int ChunkSize = 1 * 1024 * 1024;
     private readonly ProducerConsumer<StreamChunk> _chunksToProcess;
     private readonly ProducerConsumer<StreamChunk> _chunksToWrite;
-    protected readonly Stream _incomingStream;
-    protected readonly Stream _outgoingStream;
+    private readonly Stream _incomingStream;
+    private readonly Stream _outgoingStream;
+    private readonly IBZipProcessor _zipProcessor;
 
-    protected BZipProcessor(Stream incomingStream, Stream outgoingStream)
+    public BZipArchiver(Stream incomingStream, Stream outgoingStream, IBZipProcessor zipProcessor)
     {
       _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
       _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
+      _zipProcessor = zipProcessor ?? throw new ArgumentNullException(nameof(zipProcessor));
 
       _chunksToProcess = new ProducerConsumer<StreamChunk>(100);
       _chunksToWrite = new ProducerConsumer<StreamChunk>();
@@ -36,7 +40,7 @@ namespace BZip
       WaitHandle.WaitAny(new[] {errorRaised.WaitHandle, completed.WaitHandle});
       if (errorRaised.IsSet)
       {
-        throw new Exception("Could not compress", error);
+        throw new InvalidOperationException("Could not process entry", error);
       }
 
       void Workflow()
@@ -44,7 +48,7 @@ namespace BZip
         var readerThread = new Thread(_ => CatchExceptions(SplitIncomingStreamByChunks));
 
         var processThreads = Enumerable.Range(0, Environment.ProcessorCount)
-          .Select(_ => new Thread(_ => CatchExceptions(ProcessChunks)))
+          .Select(_ => new Thread(__ => CatchExceptions(ProcessChunks)))
           .ToList();
 
         var writerThread = new Thread(_ => CatchExceptions(WriteProcessedChunks));
@@ -80,7 +84,7 @@ namespace BZip
     {
       var chunkIndex = 0;
 
-      while (TryGetNextChunk(out var sequence))
+      while (_zipProcessor.TryReadNextChunk(_incomingStream, out var sequence))
       {
         var chunk = new StreamChunk(chunkIndex, sequence);
         _chunksToProcess.TryAdd(chunk);
@@ -91,8 +95,6 @@ namespace BZip
       _chunksToProcess.CompleteAdding();
     }
 
-    protected abstract bool TryGetNextChunk(out Sequence<byte> chunk);
-
     private void ProcessChunks()
     {
       while (_chunksToProcess.TryTake(out var chunk))
@@ -100,7 +102,7 @@ namespace BZip
         var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
         using (var buffer = sequence.AsStream())
         {
-          ProcessChunk(buffer, chunk);
+          _zipProcessor.ProcessChunk(buffer, chunk);
         }
 
         var processedChunk = new StreamChunk(chunk.Index, sequence);
@@ -109,8 +111,6 @@ namespace BZip
         _chunksToWrite.TryAdd(processedChunk);
       }
     }
-
-    protected abstract void ProcessChunk(Stream buffer, StreamChunk chunk);
 
     private void WriteProcessedChunks()
     {
@@ -138,7 +138,7 @@ namespace BZip
 
       void WriteChunkAndIncrementIndex(StreamChunk chunk)
       {
-        WriteBlockLength(chunk);
+        _zipProcessor.WriteChunkLength(chunk, _outgoingStream);
 
         chunk.Stream.CopyTo(_outgoingStream);
         chunk.Dispose();
@@ -146,7 +146,5 @@ namespace BZip
         nextIndexToWrite++;
       }
     }
-
-    protected abstract void WriteBlockLength(StreamChunk chunk);
   }
 }

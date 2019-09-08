@@ -6,47 +6,87 @@ using Nerdbank.Streams;
 
 namespace BZip
 {
-  internal class BZipCompressor : BZipProcessor
+  /// <summary>
+  ///   A facade for zipping files
+  /// </summary>
+  public class BZipCompressor
   {
-    public BZipCompressor(Stream incomingStream, Stream outgoingStream) : base(incomingStream, outgoingStream)
+    private readonly int _chunkSize;
+    private readonly Stream _incomingStream;
+    private readonly Stream _outgoingStream;
+
+    public BZipCompressor(Stream incomingStream, Stream outgoingStream, int chunkSize = 1 * 1024 * 1024)
     {
+      if (chunkSize <= 0)
+      {
+        throw new ArgumentOutOfRangeException(nameof(chunkSize));
+      }
+
+      _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
+      _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
+      _chunkSize = chunkSize;
     }
 
-    protected override bool TryGetNextChunk(out Sequence<byte> chunk)
+    public void Compress()
     {
-      chunk = new Sequence<byte>(ArrayPool<byte>.Shared);
+      var processor = new Processor(_chunkSize);
+      var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor);
 
       try
       {
-        var buffer = chunk.GetSpan(ChunkSize);
-        var bytesRead = _incomingStream.Read(buffer);
-        if (bytesRead == 0)
+        archiver.Process();
+      }
+      catch (Exception e)
+      {
+        throw new InvalidOperationException("Could not compress stream", e);
+      }
+    }
+
+    private class Processor : IBZipProcessor
+    {
+      private readonly int _chunkSize;
+
+      public Processor(int chunkSize)
+      {
+        _chunkSize = chunkSize;
+      }
+
+      public bool TryReadNextChunk(Stream stream, out Sequence<byte>? chunk)
+      {
+        chunk = new Sequence<byte>(ArrayPool<byte>.Shared);
+
+        try
+        {
+          var buffer = chunk.GetSpan(_chunkSize);
+          var bytesRead = stream.Read(buffer);
+          if (bytesRead == 0)
+          {
+            chunk.Dispose();
+            return false;
+          }
+
+          chunk.Advance(bytesRead);
+        }
+        catch
         {
           chunk.Dispose();
-          return false;
+          throw;
         }
 
-        chunk.Advance(bytesRead);
+        return true;
       }
-      catch
+
+      public void ProcessChunk(Stream buffer, StreamChunk chunk)
       {
-        chunk.Dispose();
-        throw;
+        using var zipStream = new GZipStream(buffer, CompressionLevel.Optimal);
+        chunk.Stream.CopyTo(zipStream);
       }
 
-      return true;
-    }
-
-    protected override void ProcessChunk(Stream buffer, StreamChunk chunk)
-    {
-      using var zipStream = new GZipStream(buffer, CompressionLevel.Optimal);
-      chunk.Stream.CopyTo(zipStream);
-    }
-
-    protected override void WriteBlockLength(StreamChunk chunk)
-    {
-      var blockLength = BitConverter.GetBytes((int) chunk.Stream.Length);
-      _outgoingStream.Write(blockLength);
+      public void WriteChunkLength(StreamChunk chunk, Stream stream)
+      {
+        var blockLength = BitConverter.GetBytes((int) chunk.Stream.Length);
+        stream.Write(blockLength);
+      }
     }
   }
 }
