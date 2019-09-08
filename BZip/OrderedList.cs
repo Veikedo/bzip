@@ -34,7 +34,7 @@ namespace BZip
       }
     }
 
-    public bool TryPeek([MaybeNullWhen(false)] out T item)
+    public bool TryPeek([NotNullWhen(true)] out T item)
     {
       if (_items.Count == 0)
       {

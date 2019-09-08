@@ -56,7 +56,7 @@ namespace BZip
       }
     }
 
-    public bool TryTake([MaybeNullWhen(false)] out T value)
+    public bool TryTake([NotNullWhen(true)] out T value)
     {
       lock (_sync)
       {
