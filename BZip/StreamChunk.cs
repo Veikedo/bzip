@@ -4,7 +4,7 @@ using Nerdbank.Streams;
 
 namespace BZip
 {
-  internal class StreamChunk : IDisposable, IComparable<StreamChunk>
+  internal sealed class StreamChunk : IDisposable, IComparable<StreamChunk>
   {
     private readonly Sequence<byte> _sequence;
 

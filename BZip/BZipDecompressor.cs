@@ -10,7 +10,7 @@ namespace BZip
   /// <summary>
   ///   A facade for unzipping files
   /// </summary>
-  public class BZipDecompressor
+  public sealed class BZipDecompressor : IDisposable
   {
     /// <summary>
     ///   TODO include Chunk Size in archive metadata
@@ -27,9 +27,15 @@ namespace BZip
         throw new ArgumentOutOfRangeException(nameof(chunkSize));
       }
 
-      _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
-      _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
+      _incomingStream = incomingStream;
+      _outgoingStream = outgoingStream;
       _chunkSize = chunkSize;
+    }
+
+    public void Dispose()
+    {
+      _incomingStream.Dispose();
+      _outgoingStream.Dispose();
     }
 
     public void Decompress()
@@ -47,7 +53,7 @@ namespace BZip
       }
     }
 
-    private class Processor : IBZipProcessor
+    private sealed class Processor : IBZipProcessor
     {
       private readonly int _chunkSize;
 

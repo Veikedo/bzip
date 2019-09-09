@@ -9,7 +9,7 @@ namespace BZip
   /// <summary>
   ///   A facade for zipping files
   /// </summary>
-  public class BZipCompressor
+  public sealed class BZipCompressor : IDisposable
   {
     private readonly int _chunkSize;
     private readonly Stream _incomingStream;
@@ -27,6 +27,12 @@ namespace BZip
       _chunkSize = chunkSize;
     }
 
+    public void Dispose()
+    {
+      _incomingStream.Dispose();
+      _outgoingStream.Dispose();
+    }
+
     public void Compress()
     {
       var processor = new Processor(_chunkSize);
@@ -42,7 +48,7 @@ namespace BZip
       }
     }
 
-    private class Processor : IBZipProcessor
+    private sealed class Processor : IBZipProcessor
     {
       private readonly int _chunkSize;
 

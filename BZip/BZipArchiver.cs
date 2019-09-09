@@ -10,7 +10,7 @@ namespace BZip
   /// <summary>
   ///   Encapsulates common logic to zip/unzip files
   /// </summary>
-  internal sealed class BZipArchiver
+  internal sealed class BZipArchiver : IDisposable
   {
     private readonly ProducerConsumer<StreamChunk> _chunksToProcess;
     private readonly ProducerConsumer<StreamChunk> _chunksToWrite;
@@ -26,6 +26,14 @@ namespace BZip
 
       _chunksToProcess = new ProducerConsumer<StreamChunk>(100);
       _chunksToWrite = new ProducerConsumer<StreamChunk>();
+    }
+
+    public void Dispose()
+    {
+      _chunksToProcess.Dispose();
+      _chunksToWrite.Dispose();
+      _incomingStream.Dispose();
+      _outgoingStream.Dispose();
     }
 
     public void Process()
@@ -101,13 +109,13 @@ namespace BZip
       while (_chunksToProcess.TryTake(out var chunk))
       {
         var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
-        using (var buffer = sequence.AsStream())
+        using (chunk)
         {
+          using var buffer = sequence.AsStream();
           _zipProcessor.ProcessChunk(chunk, buffer);
         }
 
         var processedChunk = new StreamChunk(chunk.Index, sequence);
-        chunk.Dispose();
 
         _chunksToWrite.TryAdd(processedChunk);
       }
@@ -139,10 +147,11 @@ namespace BZip
 
       void WriteChunkAndIncrementIndex(StreamChunk chunk)
       {
-        _zipProcessor.WriteChunkLength(chunk, _outgoingStream);
-
-        chunk.Stream.CopyTo(_outgoingStream);
-        chunk.Dispose();
+        using (chunk)
+        {
+          _zipProcessor.WriteChunkLength(chunk, _outgoingStream);
+          chunk.Stream.CopyTo(_outgoingStream);
+        }
 
         nextIndexToWrite++;
       }

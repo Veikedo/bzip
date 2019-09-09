@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace BZip
 {
-  internal class OrderedList<T>
+  internal sealed class OrderedList<T>
   {
     private readonly IComparer<T> _comparer;
     private readonly List<T> _items;
