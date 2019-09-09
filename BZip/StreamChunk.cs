@@ -15,8 +15,8 @@ namespace BZip
         throw new ArgumentOutOfRangeException(nameof(chunkIndex));
       }
 
-      _sequence = sequence ?? throw new ArgumentNullException(nameof(sequence));
       Index = chunkIndex;
+      _sequence = sequence;
     }
 
     public int Index { get; }

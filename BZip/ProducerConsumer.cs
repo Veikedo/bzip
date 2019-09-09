@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace BZip
 {
-  internal class ProducerConsumer<T>
+  internal sealed class ProducerConsumer<T> : IDisposable
   {
     private const int UnboundedCapacity = -1;
     private readonly int _boundedCapacity;
@@ -31,6 +31,11 @@ namespace BZip
 
     public ProducerConsumer() : this(UnboundedCapacity)
     {
+    }
+
+    public void Dispose()
+    {
+      _bulkhead?.Dispose();
     }
 
     public bool TryAdd(T value)

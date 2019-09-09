@@ -91,7 +91,7 @@ namespace BZip
         return true;
       }
 
-      public void ProcessChunk(Stream buffer, StreamChunk chunk)
+      public void ProcessChunk(StreamChunk chunk, Stream buffer)
       {
         using var zipStream = new GZipStream(chunk.Stream, CompressionMode.Decompress);
         zipStream.CopyTo(buffer);

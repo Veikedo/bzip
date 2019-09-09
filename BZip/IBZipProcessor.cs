@@ -10,7 +10,7 @@ namespace BZip
   internal interface IBZipProcessor
   {
     bool TryReadNextChunk(Stream stream, [NotNullWhen(true)] out Sequence<byte>? chunk);
-    void ProcessChunk(Stream buffer, StreamChunk chunk);
+    void ProcessChunk(StreamChunk chunk, Stream buffer);
     void WriteChunkLength(StreamChunk chunk, Stream stream);
   }
 }

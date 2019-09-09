@@ -1,60 +1,77 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using CommandLine;
 
 namespace BZip
 {
   internal class Program
   {
-    private static void Main(string[] args)
+    private static int Main(string[] args)
     {
-      const string filePath = "C:/temp/test.exe";
+      return Parser
+        .Default
+        .ParseArguments<CommandLineOptions>(args)
+        .MapResult(o =>
+          {
+            try
+            {
+              return RunApp(o);
+            }
+            catch (Exception exception)
+            {
+              var handled = exception.HandleInner(e =>
+              {
+                switch (e)
+                {
+                  case OutOfMemoryException _:
+                    Console.WriteLine("You don't have enough memory");
+                    return true;
+
+                  case IOException io:
+                    Console.WriteLine($"There is a problem with your disk {io.Message}");
+                    return true;
+
+                  case PlatformNotSupportedException _:
+                    Console.WriteLine("Your OS is not supported");
+                    return true;
+
+                  default:
+                    return false;
+                }
+              });
+
+              if (!handled)
+              {
+                Console.WriteLine(exception.Message);
+              }
+            }
+
+            return 1;
+          },
+          _ => 1);
+    }
+
+    private static int RunApp(CommandLineOptions o)
+    {
+      using var incomingStream = o.Input.OpenRead();
+      using var outgoingStream = o.Output.OpenWrite();
 
       var sw = Stopwatch.StartNew();
-
+      if (o.Compress)
       {
-        using var incomingStream = new FileStream(
-          filePath,
-          FileMode.Open,
-          FileAccess.Read,
-          FileShare.Read,
-          4096,
-          FileOptions.SequentialScan
-        );
-
-        using var outgoingStream = new FileStream(
-          filePath + ".bz",
-          FileMode.Create,
-          FileAccess.Write,
-          FileShare.None
-        );
-
         var compressor = new BZipCompressor(incomingStream, outgoingStream);
         compressor.Compress();
       }
-
+      else if (o.Decompress)
       {
-        using var incomingStream = new FileStream(
-          filePath + ".bz",
-          FileMode.Open,
-          FileAccess.Read,
-          FileShare.Read,
-          4096,
-          FileOptions.SequentialScan
-        );
-
-        using var outgoingStream = new FileStream(
-          filePath + ".unzip.exe",
-          FileMode.Create,
-          FileAccess.Write,
-          FileShare.None
-        );
-
         var compressor = new BZipDecompressor(incomingStream, outgoingStream);
         compressor.Decompress();
       }
 
-      Console.WriteLine(sw.Elapsed.ToString());
+      Console.WriteLine($"File processed in {sw.Elapsed.ToString()}");
+
+      return 0;
     }
   }
 }

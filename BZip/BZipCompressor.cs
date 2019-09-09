@@ -22,8 +22,8 @@ namespace BZip
         throw new ArgumentOutOfRangeException(nameof(chunkSize));
       }
 
-      _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
-      _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
+      _incomingStream = incomingStream;
+      _outgoingStream = outgoingStream;
       _chunkSize = chunkSize;
     }
 
@@ -76,7 +76,7 @@ namespace BZip
         return true;
       }
 
-      public void ProcessChunk(Stream buffer, StreamChunk chunk)
+      public void ProcessChunk(StreamChunk chunk, Stream buffer)
       {
         using var zipStream = new GZipStream(buffer, CompressionLevel.Optimal);
         chunk.Stream.CopyTo(zipStream);

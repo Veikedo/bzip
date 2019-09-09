@@ -20,9 +20,9 @@ namespace BZip
 
     public BZipArchiver(Stream incomingStream, Stream outgoingStream, IBZipProcessor zipProcessor)
     {
-      _incomingStream = incomingStream ?? throw new ArgumentNullException(nameof(incomingStream));
-      _outgoingStream = outgoingStream ?? throw new ArgumentNullException(nameof(outgoingStream));
-      _zipProcessor = zipProcessor ?? throw new ArgumentNullException(nameof(zipProcessor));
+      _incomingStream = incomingStream;
+      _outgoingStream = outgoingStream;
+      _zipProcessor = zipProcessor;
 
       _chunksToProcess = new ProducerConsumer<StreamChunk>(100);
       _chunksToWrite = new ProducerConsumer<StreamChunk>();
@@ -47,7 +47,8 @@ namespace BZip
       {
         var readerThread = new Thread(_ => CatchExceptions(SplitIncomingStreamByChunks));
 
-        var processThreads = Enumerable.Range(0, Environment.ProcessorCount)
+        var processThreads = Enumerable
+          .Range(0, Environment.ProcessorCount)
           .Select(_ => new Thread(__ => CatchExceptions(ProcessChunks)))
           .ToList();
 
@@ -102,7 +103,7 @@ namespace BZip
         var sequence = new Sequence<byte>(ArrayPool<byte>.Shared);
         using (var buffer = sequence.AsStream())
         {
-          _zipProcessor.ProcessChunk(buffer, chunk);
+          _zipProcessor.ProcessChunk(chunk, buffer);
         }
 
         var processedChunk = new StreamChunk(chunk.Index, sequence);
