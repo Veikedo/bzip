@@ -31,7 +31,7 @@ namespace BZip
     public void Compress()
     {
       var processor = new Processor(_options.ChunkSize, _options.CompressionLevel);
-      var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor, _options);
+      using var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor, _options);
 
       try
       {

@@ -32,7 +32,7 @@ namespace BZip
     public void Decompress()
     {
       var processor = new Processor(_options.ChunkSize);
-      var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor, _options);
+      using var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor, _options);
 
       try
       {
