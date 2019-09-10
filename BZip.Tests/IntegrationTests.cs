@@ -6,9 +6,9 @@ using Xunit.Abstractions;
 
 namespace BZip.Tests
 {
-  public class UnitTest1 : IClassFixture<FileFixture>
+  public class IntegrationTests : IClassFixture<FileFixture>
   {
-    public UnitTest1(ITestOutputHelper output, FileFixture fixture)
+    public IntegrationTests(ITestOutputHelper output, FileFixture fixture)
     {
       _output = output;
       _fixture = fixture;
@@ -18,8 +18,9 @@ namespace BZip.Tests
     private readonly FileFixture _fixture;
 
     [Fact]
-    public void Test1()
+    public void Unzipped_file_has_the_same_hash_as_the_original()
     {
+      var originalFileHash = _fixture.FileHash;
       var filePath = _fixture.FilePath;
 
       var sw = Stopwatch.StartNew();
@@ -34,18 +35,18 @@ namespace BZip.Tests
 
       {
         using var incomingStream = new FileStream(filePath + ".bz", FileMode.Open);
-        using var outgoingStream = new FileStream(filePath + ".unzip.exe", FileMode.Create);
+        using var outgoingStream = new FileStream(filePath + ".unzip", FileMode.Create);
 
-        var compressor = new BZipDecompressor(incomingStream, outgoingStream);
-        compressor.Decompress();
+        var decompressor = new BZipDecompressor(incomingStream, outgoingStream);
+        decompressor.Decompress();
       }
 
-      using var unzippedFile = new FileStream(filePath + ".unzip.exe", FileMode.Open);
+      using var unzippedFile = new FileStream(filePath + ".unzip", FileMode.Open);
 
       using var md5 = MD5.Create();
       var actualHash = md5.ComputeHash(unzippedFile);
 
-      Assert.Equal(_fixture.FileHash, actualHash);
+      Assert.Equal(originalFileHash, actualHash);
 
       _output.WriteLine(sw.Elapsed.ToString());
     }
