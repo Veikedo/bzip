@@ -11,20 +11,15 @@ namespace BZip
   /// </summary>
   public sealed class BZipCompressor : IDisposable
   {
-    private readonly int _chunkSize;
     private readonly Stream _incomingStream;
+    private readonly BZipArchiverOptions _options;
     private readonly Stream _outgoingStream;
 
-    public BZipCompressor(Stream incomingStream, Stream outgoingStream, int chunkSize = 1 * 1024 * 1024)
+    public BZipCompressor(Stream incomingStream, Stream outgoingStream, BZipArchiverOptions? options = default)
     {
-      if (chunkSize <= 0)
-      {
-        throw new ArgumentOutOfRangeException(nameof(chunkSize));
-      }
-
       _incomingStream = incomingStream;
       _outgoingStream = outgoingStream;
-      _chunkSize = chunkSize;
+      _options = options ?? new BZipArchiverOptions();
     }
 
     public void Dispose()
@@ -35,8 +30,8 @@ namespace BZip
 
     public void Compress()
     {
-      var processor = new Processor(_chunkSize);
-      var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor);
+      var processor = new Processor(_options.ChunkSize, _options.CompressionLevel);
+      var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor, _options);
 
       try
       {
@@ -51,10 +46,12 @@ namespace BZip
     private sealed class Processor : IBZipProcessor
     {
       private readonly int _chunkSize;
+      private readonly CompressionLevel _compressionLevel;
 
-      public Processor(int chunkSize)
+      public Processor(int chunkSize, CompressionLevel compressionLevel)
       {
         _chunkSize = chunkSize;
+        _compressionLevel = compressionLevel;
       }
 
       public bool TryReadNextChunk(Stream stream, out Sequence<byte>? chunk)
@@ -84,7 +81,7 @@ namespace BZip
 
       public void ProcessChunk(StreamChunk chunk, Stream buffer)
       {
-        using var zipStream = new GZipStream(buffer, CompressionLevel.Optimal);
+        using var zipStream = new GZipStream(buffer, _compressionLevel);
         chunk.Stream.CopyTo(zipStream);
       }
 

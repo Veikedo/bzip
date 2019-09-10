@@ -15,17 +15,23 @@ namespace BZip
     private readonly ProducerConsumer<StreamChunk> _chunksToProcess;
     private readonly ProducerConsumer<StreamChunk> _chunksToWrite;
     private readonly Stream _incomingStream;
+    private readonly BZipArchiverOptions _options;
     private readonly Stream _outgoingStream;
     private readonly IBZipProcessor _zipProcessor;
 
-    public BZipArchiver(Stream incomingStream, Stream outgoingStream, IBZipProcessor zipProcessor)
+    public BZipArchiver(
+      Stream incomingStream,
+      Stream outgoingStream,
+      IBZipProcessor zipProcessor,
+      BZipArchiverOptions options)
     {
       _incomingStream = incomingStream;
       _outgoingStream = outgoingStream;
       _zipProcessor = zipProcessor;
+      _options = options;
 
-      _chunksToProcess = new ProducerConsumer<StreamChunk>(100);
-      _chunksToWrite = new ProducerConsumer<StreamChunk>();
+      _chunksToProcess = new ProducerConsumer<StreamChunk>(options.ChunksToProcessBoundedCapacity);
+      _chunksToWrite = new ProducerConsumer<StreamChunk>(options.ChunksToWriteBoundedCapacity);
     }
 
     public void Dispose()
@@ -56,7 +62,7 @@ namespace BZip
         var readerThread = new Thread(_ => CatchExceptions(SplitIncomingStreamByChunks));
 
         var processThreads = Enumerable
-          .Range(0, Environment.ProcessorCount)
+          .Range(0, _options.MaxDegreeOfParallelism)
           .Select(_ => new Thread(__ => CatchExceptions(ProcessChunks)))
           .ToList();
 

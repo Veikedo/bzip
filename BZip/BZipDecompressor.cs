@@ -12,24 +12,15 @@ namespace BZip
   /// </summary>
   public sealed class BZipDecompressor : IDisposable
   {
-    /// <summary>
-    ///   TODO include Chunk Size in archive metadata
-    /// </summary>
-    private readonly int _chunkSize;
-
     private readonly Stream _incomingStream;
+    private readonly BZipArchiverOptions _options;
     private readonly Stream _outgoingStream;
 
-    public BZipDecompressor(Stream incomingStream, Stream outgoingStream, int chunkSize = 1 * 1024 * 1024)
+    public BZipDecompressor(Stream incomingStream, Stream outgoingStream, BZipArchiverOptions? options = default)
     {
-      if (chunkSize <= 0)
-      {
-        throw new ArgumentOutOfRangeException(nameof(chunkSize));
-      }
-
       _incomingStream = incomingStream;
       _outgoingStream = outgoingStream;
-      _chunkSize = chunkSize;
+      _options = options ?? new BZipArchiverOptions();
     }
 
     public void Dispose()
@@ -40,8 +31,8 @@ namespace BZip
 
     public void Decompress()
     {
-      var processor = new Processor(_chunkSize);
-      var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor);
+      var processor = new Processor(_options.ChunkSize);
+      var archiver = new BZipArchiver(_incomingStream, _outgoingStream, processor, _options);
 
       try
       {
